@@ -29,7 +29,6 @@ def check_playwright_installed() -> bool:
     """
     log = logging.getLogger("vix_controller")
     try:
-        # Paso 1: Instalar Chromium si no existe
         import subprocess
         result = subprocess.run(
             ["playwright", "install", "chromium"],
@@ -38,9 +37,8 @@ def check_playwright_installed() -> bool:
         if result.returncode == 0:
             log.info("Playwright install chromium: OK")
         else:
-            log.warning(f"Playwright install output: {result.stderr[:200]}")
+            log.warning(f"Playwright install output: {result.stderr[:300]}")
 
-        # Paso 2: Verificar que funciona
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -48,7 +46,7 @@ def check_playwright_installed() -> bool:
                 args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
             )
             browser.close()
-        log.info("Playwright check: Chromium OK ✅")
+        log.info("Playwright check: Chromium OK")
         return True
     except Exception as e:
         log.error(f"Playwright check failed: {e}")
@@ -66,9 +64,12 @@ st.markdown("""
 .stApp{background:var(--bg);}
 #MainMenu,footer,header{visibility:hidden;}
 .block-container{padding:0.5rem 1.5rem;max-width:1400px;}
-.hdr{display:flex;align-items:center;padding:0.5rem 0;border-bottom:2px solid #F7931A;margin-bottom:0.8rem;}
-.hdr .logo{font-family:'Inter',sans-serif;font-weight:800;font-size:1.3rem;color:#F7931A;letter-spacing:1px;}
-.hdr .sub{font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:var(--dim);margin-left:auto;}
+.hdr{display:flex;align-items:center;padding:0.6rem 0;border-bottom:2px solid var(--border);margin-bottom:0.8rem;gap:1rem;}
+.hdr .logo-box{display:flex;align-items:center;gap:0.6rem;}
+.hdr .logo-icon{width:32px;height:32px;background:linear-gradient(135deg,#F7931A,#FF6B35);border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:#0D1117;font-family:'Inter',sans-serif;letter-spacing:-0.5px;}
+.hdr .logo-text{font-family:'Inter',sans-serif;font-weight:800;font-size:1.1rem;color:#F0F6FC;letter-spacing:0.8px;}
+.hdr .logo-tag{font-family:'JetBrains Mono',monospace;font-size:0.55rem;color:#F7931A;letter-spacing:1.5px;text-transform:uppercase;margin-top:1px;}
+.hdr .sub{font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:var(--dim);margin-left:auto;text-align:right;line-height:1.4;}
 .mrow{display:flex;gap:4px;margin-bottom:0.6rem;flex-wrap:wrap;}
 .mpill{background:var(--card);border:1px solid var(--border);border-radius:4px;padding:0.4rem 0.7rem;flex:1;min-width:120px;text-align:center;}
 .mpill .ml{font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.6px;}
@@ -442,7 +443,7 @@ def calc_metrics(bt: pd.DataFrame) -> dict:
                 yearly=yearly, equity=eq)
 
 
-def build_bb_chart(bt: pd.DataFrame, window: int = 120) -> go.Figure:
+def build_bb_chart(bt: pd.DataFrame, window: int = 250) -> go.Figure:
     """Gráfico VXX + Bollinger Bands con zonas y flechas ENTRY/EXIT."""
     p = bt.tail(window).copy()
 
@@ -461,11 +462,16 @@ def build_bb_chart(bt: pd.DataFrame, window: int = 120) -> go.Figure:
     sig = p['sig_final']
     fig = go.Figure()
 
-    # Zonas colored background
-    for i in range(1, len(p)):
-        clr = 'rgba(63,185,80,0.07)' if sig.iloc[i] == 1 else 'rgba(248,81,73,0.03)'
-        fig.add_vrect(x0=p.index[i-1], x1=p.index[i],
-                      fillcolor=clr, layer="below", line_width=0)
+    # Zonas colored — agregar como trace con fill (mucho más eficiente que vrect)
+    # Crear columna de precio que solo existe cuando LONG para fill
+    p['long_zone'] = np.where(sig == 1, p['VXX_Close'].max() * 1.15, np.nan)
+    p['cash_zone'] = np.where(sig == 0, p['VXX_Close'].max() * 1.15, np.nan)
+    fig.add_trace(go.Scatter(x=p.index, y=p['long_zone'], mode='none',
+        fill='tozeroy', fillcolor='rgba(63,185,80,0.06)', showlegend=False,
+        hoverinfo='skip'))
+    fig.add_trace(go.Scatter(x=p.index, y=p['cash_zone'], mode='none',
+        fill='tozeroy', fillcolor='rgba(248,81,73,0.03)', showlegend=False,
+        hoverinfo='skip'))
 
     # BB band fill
     fig.add_trace(go.Scatter(x=p.index, y=p['BB_Upper'], mode='lines',
@@ -589,11 +595,12 @@ def build_operational_chart(bt: pd.DataFrame, col_price: str,
 
     fig = go.Figure()
 
-    # ── Zonas LONG / CASH ──────────────────────────────────────
-    for i in range(1, len(p)):
-        clr = 'rgba(63,185,80,0.07)' if sig.iloc[i] == 1 else 'rgba(248,81,73,0.025)'
-        fig.add_vrect(x0=p.index[i-1], x1=p.index[i],
-                      fillcolor=clr, layer="below", line_width=0)
+    # ── Zonas LONG / CASH (eficiente, sin vrect loop) ────────
+    p_plot = p.copy()
+    p_plot['long_zone'] = np.where(sig == 1, price_s.max() * 1.15, np.nan)
+    fig.add_trace(go.Scatter(x=p_plot.index, y=p_plot['long_zone'], mode='none',
+        fill='tozeroy', fillcolor='rgba(63,185,80,0.06)', showlegend=False,
+        hoverinfo='skip'))
 
     # ── Precio ─────────────────────────────────────────────────
     fig.add_trace(go.Scatter(
@@ -841,10 +848,21 @@ st.components.v1.html(f"""
 # HEADER
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+mkt_status = "MARKET OPEN" if datetime.now().hour >= 9 and datetime.now().hour < 16 and datetime.now().weekday() < 5 else "MARKET CLOSED"
+mkt_clr = "#3FB950" if "OPEN" in mkt_status else "#8B949E"
 st.markdown(f"""
 <div class="hdr">
-    <div class="logo">VIX CONTROLLER</div>
-    <div class="sub">{now_str} · Auto-refresh in <span id="refresh-countdown">{REFRESH_INTERVAL}s</span> · Source: CBOE Delayed Quotes</div>
+    <div class="logo-box">
+        <div class="logo-icon">Vc</div>
+        <div>
+            <div class="logo-text">VIX CONTROLLER</div>
+            <div class="logo-tag">Volatility Intelligence Platform</div>
+        </div>
+    </div>
+    <div class="sub">
+        <span style="color:{mkt_clr};font-weight:600">{mkt_status}</span> · {now_str}<br>
+        Auto-refresh in <span id="refresh-countdown" style="color:#F7931A;font-weight:600">{REFRESH_INTERVAL}s</span> · Source: CBOE Delayed Quotes
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -907,7 +925,7 @@ def fp(v):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TABS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-tab1, tab2, tab3 = st.tabs(["📈  Term Structure", "🎯  Monitor Operativo", "ℹ️  Help"])
+tab1, tab2, tab3, tab4 = st.tabs(["📈  Term Structure", "🎯  Monitor Operativo", "💡  Recomendaciones", "ℹ️  Help"])
 
 # ━━━━━━━━━━━━━━━━━ TAB 1: TERM STRUCTURE ━━━━━━━━━━━━━━━━━━
 with tab1:
@@ -1216,11 +1234,12 @@ with tab2:
     st.markdown("<div style='border-top:1px solid #30363D;margin:0.8rem 0 0.6rem'></div>",
                 unsafe_allow_html=True)
 
+    # ── helper for metric cards ──
+    def mcard(label, val, clr="nt"):
+        return f'<div class="mpill"><div class="ml">{label}</div><div class="mv {clr}">{val}</div></div>'
+
     if metrics:
         m = metrics
-        mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
-        def mcard(label, val, clr="nt"):
-            return f'<div class="mpill"><div class="ml">{label}</div><div class="mv {clr}">{val}</div></div>'
 
         st.markdown(f"""<div class="mrow">
             {mcard("CAGR", f"{m['cagr']:+.1f}%", "up" if m['cagr']>0 else "dn")}
@@ -1254,37 +1273,48 @@ with tab2:
     st.markdown("<div style='font-family:JetBrains Mono;font-size:0.72rem;"
                 "color:#8B949E;margin-bottom:0.2rem'>SEÑAL DE TIMING · VXX vs BB(20, 2σ)</div>",
                 unsafe_allow_html=True)
-    fig_vxx = build_bb_chart(bt, window=len(bt))   # todo el histórico
-    st.plotly_chart(fig_vxx, width="stretch",
-                    config=dict(displayModeBar=True, displaylogo=False,
-                                modeBarButtonsToRemove=['select2d','lasso2d']))
+    try:
+        fig_vxx = build_bb_chart(bt, window=250)
+        st.plotly_chart(fig_vxx, width="stretch",
+                        config=dict(displayModeBar=True, displaylogo=False,
+                                    modeBarButtonsToRemove=['select2d','lasso2d']))
+    except Exception as e:
+        st.error(f"Error en gráfica VXX: {e}")
 
     # ── Gráfica 2: SVIX operativa ──────────────────────────────
     if 'SVIX_Close' in bt.columns and bt['SVIX_Close'].notna().sum() > 10:
         st.markdown("<div style='font-family:JetBrains Mono;font-size:0.72rem;"
                     "color:#8B949E;margin:0.6rem 0 0.2rem'>VEHÍCULO AGRESIVO · SVIX (-1x)</div>",
                     unsafe_allow_html=True)
-        fig_svix = build_operational_chart(
-            bt, col_price='SVIX_Close', label='SVIX', color='#E91E63',
-            trades_df=trades_df,
-            today_price=svix_today, today_sig=final_sig_today,
-        )
-        st.plotly_chart(fig_svix, width="stretch",
-                        config=dict(displayModeBar=True, displaylogo=False,
-                                    modeBarButtonsToRemove=['select2d','lasso2d']))
+        try:
+            bt_svix = bt.tail(250)
+            fig_svix = build_operational_chart(
+                bt_svix, col_price='SVIX_Close', label='SVIX', color='#E91E63',
+                trades_df=trades_df,
+                today_price=svix_today, today_sig=final_sig_today,
+            )
+            st.plotly_chart(fig_svix, width="stretch",
+                            config=dict(displayModeBar=True, displaylogo=False,
+                                        modeBarButtonsToRemove=['select2d','lasso2d']))
+        except Exception as e:
+            st.error(f"Error en gráfica SVIX: {e}")
 
     # ── Gráfica 3: SVXY operativa ──────────────────────────────
     st.markdown("<div style='font-family:JetBrains Mono;font-size:0.72rem;"
                 "color:#8B949E;margin:0.6rem 0 0.2rem'>VEHÍCULO PRINCIPAL · SVXY (-0.5x)</div>",
                 unsafe_allow_html=True)
-    fig_svxy = build_operational_chart(
-        bt, col_price='SVXY_Close', label='SVXY', color='#39D2C0',
-        trades_df=trades_df,
-        today_price=svxy_today, today_sig=final_sig_today,
-    )
-    st.plotly_chart(fig_svxy, width="stretch",
-                    config=dict(displayModeBar=True, displaylogo=False,
-                                modeBarButtonsToRemove=['select2d','lasso2d']))
+    try:
+        bt_svxy = bt.tail(250)
+        fig_svxy = build_operational_chart(
+            bt_svxy, col_price='SVXY_Close', label='SVXY', color='#39D2C0',
+            trades_df=trades_df,
+            today_price=svxy_today, today_sig=final_sig_today,
+        )
+        st.plotly_chart(fig_svxy, width="stretch",
+                        config=dict(displayModeBar=True, displaylogo=False,
+                                    modeBarButtonsToRemove=['select2d','lasso2d']))
+    except Exception as e:
+        st.error(f"Error en gráfica SVXY: {e}")
 
     # ═══════════════════════════════════════════
     # SECCIÓN 4 — HISTORIAL DE OPERACIONES
@@ -1351,8 +1381,76 @@ with tab2:
         st.info("No se encontraron trades en el histórico.")
 
 
-# ━━━━━━━━━━━━━━━━━ TAB 3: HELP ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━ TAB 3: RECOMENDACIONES ━━━━━━━━━━━━━━━━━
 with tab3:
+    st.markdown("""
+    ### 💡 Recomendaciones para Mejorar el Análisis
+
+    ---
+
+    **🔧 Mejoras al Monitor Operativo:**
+
+    **1. Alertas por Telegram/Email**
+    Configurar un bot que envíe notificación cuando la señal cambie de LONG a CASH o viceversa. Solo 7 alertas al año pero cada una es crítica.
+
+    **2. Dashboard de Régimen de Mercado**
+    Panel dedicado que muestre: VIX actual con percentil histórico, ratio VIX/VIX3M (inversión de term structure), VVIX (volatilidad del VIX), y correlación SPX-VIX rolling. Esto da contexto de "qué tan peligroso es el entorno actual".
+
+    **3. Indicador de Calidad de Señal**
+    No todas las entradas son iguales. Agregar un "score" que pondere: nivel de contango (más alto = mejor), distancia de VXX a SMA (más lejos debajo = más confianza), VIX absoluto (< 15 = óptimo), y VVIX (< 100 = calma).
+
+    **4. Position Sizing Dinámico**
+    En vez de todo-o-nada, escalar la posición según el score de calidad: 100% en VIX < 15 con contango > 5%, 75% en VIX 15-20, 50% en VIX 20-25, 25% o nada en VIX > 25.
+
+    ---
+
+    **📊 Mejoras Analíticas:**
+
+    **5. GEX (Gamma Exposure) Overlay**
+    Agregar datos de gamma exposure del SPX para identificar niveles de soporte/resistencia donde los dealers hacen hedging. Esto ayuda a anticipar movimientos explosivos del VIX.
+
+    **6. Skew Monitor**
+    Mostrar el skew de opciones del SPX (ratio de puts OTM vs calls OTM). Un skew elevado anticipa demanda de protección y potencial spike de VIX.
+
+    **7. Análisis de Flujos (ETP Flows)**
+    Trackear el AUM y flujos netos de VXX, SVXY, UVXY. Flujos masivos hacia VXX = demanda de protección. Flujos hacia SVXY = apetito por riesgo.
+
+    **8. Correlación Rolling SPX-VIX**
+    Mostrar la correlación rolling 20d entre SPX y VIX. Cuando se rompe la correlación inversa normal (ambos suben o ambos bajan), es señal de stress estructural.
+
+    ---
+
+    **🔄 Mejoras Operativas:**
+
+    **9. Trade Journal Automático**
+    Que el monitor genere automáticamente un registro cada vez que detecta cambio de señal: fecha, precios, condiciones de mercado, y lo append a un Google Sheet via API.
+
+    **10. Backtesting Rolling (Walk-Forward Live)**
+    Cada mes, recalcular automáticamente el Sharpe rolling 6m y comparar con el del backtest original. Si cae debajo de 0.5 por 2 meses, flag de alerta.
+
+    **11. Multi-Timeframe Confirmation**
+    Agregar un BB(20, 2σ) en timeframe semanal además del diario. Operar solo cuando ambos timeframes coinciden podría reducir whipsaws.
+
+    **12. Slippage Tracker**
+    Comparar el precio de ejecución real (que registras en el Sheet) vs el open teórico. Acumular el slippage real por trade para saber cuánto te cuesta la ejecución.
+
+    ---
+
+    **📈 Instrumentos Adicionales:**
+
+    **13. Bull Put Spread como Alternativa**
+    En vez de comprar SVXY directamente, vender Bull Put Spreads en SPY cuando la señal está activa. Misma dirección pero con riesgo definido y theta positiva.
+
+    **14. Comparar con SVIX (-1x)**
+    Ya tienes SVIX en el monitor. Agregar un panel que compare el retorno acumulado de la misma señal aplicada a SVXY vs SVIX en los últimos 6 meses.
+
+    **15. VIX Futures Roll Yield Monitor**
+    Mostrar el roll yield diario implícito: (M1-Spot)/M1 * (365/DTE). Este es el "carry" real que captura la estrategia y es el indicador más directo del edge.
+
+    """)
+
+# ━━━━━━━━━━━━━━━━━ TAB 4: HELP ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tab4:
     st.markdown("""
     ### VIX Controller — Guía
 
