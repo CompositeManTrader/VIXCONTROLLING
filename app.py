@@ -24,14 +24,24 @@ st.set_page_config(page_title="VIX Controller", page_icon="🔴", layout="wide",
 @st.cache_resource
 def check_playwright_installed() -> bool:
     """
-    Verifica que Playwright y Chromium estén disponibles.
+    Instala Chromium si no existe y verifica que funcione.
     Se ejecuta UNA sola vez por deployment (cache_resource).
-    NO lanza el browser aquí — solo importa y verifica el ejecutable.
     """
     log = logging.getLogger("vix_controller")
     try:
+        # Paso 1: Instalar Chromium si no existe
+        import subprocess
+        result = subprocess.run(
+            ["playwright", "install", "chromium"],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode == 0:
+            log.info("Playwright install chromium: OK")
+        else:
+            log.warning(f"Playwright install output: {result.stderr[:200]}")
+
+        # Paso 2: Verificar que funciona
         from playwright.sync_api import sync_playwright
-        # Verificación mínima: solo lanzar y cerrar inmediatamente
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
@@ -934,7 +944,7 @@ with tab1:
 
     # Chart
     fig = build_term_chart(vix_spot, df_vx, show_prev=SHOW_PREV)
-    st.plotly_chart(fig, use_container_width=True, config=dict(displayModeBar=True, displaylogo=False))
+    st.plotly_chart(fig, width="stretch", config=dict(displayModeBar=True, displaylogo=False))
 
     # Contango & Difference table (VIXCentral style)
     if len(df_vx) >= 2:
@@ -1224,11 +1234,11 @@ with tab2:
         col_eq, col_yr = st.columns([2, 1])
         with col_eq:
             fig_eq = build_equity_chart(m['equity'])
-            st.plotly_chart(fig_eq, use_container_width=True,
+            st.plotly_chart(fig_eq, width="stretch",
                             config=dict(displayModeBar=False, displaylogo=False))
         with col_yr:
             fig_yr = build_yearly_heatmap(m['yearly'])
-            st.plotly_chart(fig_yr, use_container_width=True,
+            st.plotly_chart(fig_yr, width="stretch",
                             config=dict(displayModeBar=False, displaylogo=False))
 
     # ═══════════════════════════════════════════
@@ -1245,7 +1255,7 @@ with tab2:
                 "color:#8B949E;margin-bottom:0.2rem'>SEÑAL DE TIMING · VXX vs BB(20, 2σ)</div>",
                 unsafe_allow_html=True)
     fig_vxx = build_bb_chart(bt, window=len(bt))   # todo el histórico
-    st.plotly_chart(fig_vxx, use_container_width=True,
+    st.plotly_chart(fig_vxx, width="stretch",
                     config=dict(displayModeBar=True, displaylogo=False,
                                 modeBarButtonsToRemove=['select2d','lasso2d']))
 
@@ -1259,7 +1269,7 @@ with tab2:
             trades_df=trades_df,
             today_price=svix_today, today_sig=final_sig_today,
         )
-        st.plotly_chart(fig_svix, use_container_width=True,
+        st.plotly_chart(fig_svix, width="stretch",
                         config=dict(displayModeBar=True, displaylogo=False,
                                     modeBarButtonsToRemove=['select2d','lasso2d']))
 
@@ -1272,7 +1282,7 @@ with tab2:
         trades_df=trades_df,
         today_price=svxy_today, today_sig=final_sig_today,
     )
-    st.plotly_chart(fig_svxy, use_container_width=True,
+    st.plotly_chart(fig_svxy, width="stretch",
                     config=dict(displayModeBar=True, displaylogo=False,
                                 modeBarButtonsToRemove=['select2d','lasso2d']))
 
