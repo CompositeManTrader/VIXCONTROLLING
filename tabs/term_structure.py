@@ -125,12 +125,12 @@ def render(df_vx, vix_spot, etps, m1p, m2p, front_ct, SHOW_PREV, SHOW_TABLE, N_M
                 <tbody>{rows}</tbody>
             </table>""", unsafe_allow_html=True)
     
+      
         if df_vx.empty:
             st.warning("⚠️ No se pudieron obtener precios de futuros VIX del CBOE.")
-            if not pw_ready:
-                st.error("❌ Playwright/Chromium no se pudo inicializar. Verifica packages.txt y requirements.txt")
+            st.error("❌ Playwright/Chromium no se pudo inicializar. Verifica packages.txt y requirements.txt")
             st.info("💡 La página CBOE carga datos por JavaScript. Se necesita Playwright + Chromium para renderizarla.")
-    
+            
         if not df_vx.empty:
             scraped = df_vx['Scraped_At'].iloc[0] if 'Scraped_At' in df_vx.columns else "?"
             st.caption(f"Contratos: {len(df_vx)} mensuales · Scraped: {scraped} · CBOE Delayed Quotes")
