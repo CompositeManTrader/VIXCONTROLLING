@@ -11,6 +11,8 @@ from io import StringIO
 import re
 from core import now_cdmx
 
+PARQUET_PATH = "data/master.parquet"
+
 @st.cache_resource
 def check_playwright_installed() -> bool:
     """
@@ -436,16 +438,6 @@ COT_VIX_CODE   = "1170E1"                        # CBOE VIX VOLATILITY INDEX
 COT_API_BASE   = "https://publicreporting.cftc.gov/resource"
 COT_DISAGG_ID  = "72hh-3qpy"                     # Disaggregated Futures & Options Combined
 COT_LEGACY_ID  = "6dca-aqww"                     # Legacy (si disagg falla)
-
-
-def build_cot_positioning_chart(cot_df, window=104):
-    """Net Managed Money positioning + percentile bands."""
-    p = cot_df.tail(window).copy()
-    if 'net_mm' not in p.columns or 'date' not in p.columns:
-        return go.Figure()
-    p = p.dropna(subset=['net_mm', 'date'])
-    if len(p) < 5:
-        return go.Figure()
 
 @st.cache_data(ttl=3600)
 def load_master_parquet() -> pd.DataFrame:
